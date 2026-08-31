@@ -413,3 +413,16 @@ const server = app.listen(PORT, HOST, () => {
 });
 
 server.on('error', (err)=>{ console.error('[diagnostic] server error', err); });
+
+// Keep-alive heartbeat for platforms like Render (prevent sleep on free tier)
+const KEEP_ALIVE_URL = process.env.KEEP_ALIVE_URL || (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/health` : null);
+if (KEEP_ALIVE_URL) {
+  console.log(`[startup] Starting heartbeat keep-alive for ${KEEP_ALIVE_URL} every 10m`);
+  setInterval(() => {
+    import('node-fetch').then(({ default: fetch }) => {
+      fetch(KEEP_ALIVE_URL)
+        .then(res => console.log(`[heartbeat] pinged ${KEEP_ALIVE_URL} - status: ${res.status}`))
+        .catch(e => console.error(`[heartbeat] ping failed:`, e.message));
+    }).catch(e => console.error('[heartbeat] failed to load node-fetch:', e.message));
+  }, 10 * 60 * 1000); // 10 minutes
+}

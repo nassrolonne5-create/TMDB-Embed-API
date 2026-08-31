@@ -19,5 +19,5 @@
   "enableLordflixProvider": false,
   "enableNotorrentProvider": false,
   "enableDahmermoviesProvider": true,
-  "port": 8787
+  "port": 3000
 }

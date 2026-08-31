@@ -4,7 +4,7 @@ ARG VERSION=dev
 WORKDIR /app
 
 # Install only production dependencies first (leveraging cache)
-COPY package.json package-lock.json ./
+COPY package.json ./
 # Using npm install instead of npm ci because lock file appears out-of-sync
 # If you later regenerate lock (npm install locally) you can revert to npm ci for reproducibility
 RUN npm install --omit=dev
@@ -22,7 +22,7 @@ FROM node:20-alpine AS runtime
 ARG VERSION=dev
 WORKDIR /app
 ENV NODE_ENV=production \
-    API_PORT=8787 \
+    PORT=3000 \
     BIND_HOST=0.0.0.0 \
     APP_VERSION=${VERSION}
 
@@ -40,7 +40,7 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/README.md ./
 
 # Expose port (documentational; runtime can override)
-EXPOSE 8787
+EXPOSE 3000
 
 # Ensure runtime user owns app directory for writes (overrides, restart marker)
 RUN chown -R app:app /app
@@ -54,6 +54,6 @@ LABEL org.opencontainers.image.title="TMDB Embed API" \
     org.opencontainers.image.licenses="MIT"
 
 # Healthcheck (simple)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://localhost:${API_PORT:-8787}/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://localhost:${PORT:-3000}/api/health || exit 1
 
 CMD ["node","apiServer.js"]

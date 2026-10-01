@@ -17,6 +17,8 @@ async function fetchJson(url, timeoutMs = 10000) {
         const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
         clearTimeout(timer);
         if (!res.ok) return null;
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) return null;
         return await res.json();
     } catch (err) {
         console.warn(`[HDGharTV] fetch failed for ${url}: ${err.message}`);

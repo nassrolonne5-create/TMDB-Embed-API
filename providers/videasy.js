@@ -135,15 +135,14 @@ async function getVideasyStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
     try {
         const seedRes = await axios.get(`${VIDEASY_API}/seed?mediaId=${tmdbId}`, {
             headers: VIDEASY_HEADERS,
-            timeout: 8000
+            timeout: 4000
         });
         seed = seedRes.data && seedRes.data.seed;
     } catch (err) {
-        console.error(`[Videasy] Seed fetch failed: ${err.message}`);
+        console.warn(`[Videasy] Seed fetch unavailable: ${err.message}`);
         return [];
     }
     if (!seed) {
-        console.error('[Videasy] No seed returned.');
         return [];
     }
 

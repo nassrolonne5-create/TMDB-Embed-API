@@ -12,7 +12,7 @@ const VIXSRC_HEADERS = {
 // Step 1: GET /api/movie/{id} or /api/tv/{id}/{s}/{e} → { src: "/embed/..." }
 async function fetchApi(url) {
     try {
-        const response = await axios.get(url, { headers: VIXSRC_HEADERS, timeout: 10000 });
+        const response = await axios.get(url, { headers: VIXSRC_HEADERS, timeout: 3000 });
         if (response.status !== 200 || !response.data) return null;
         return response.data;
     } catch {
@@ -25,7 +25,7 @@ async function fetchEmbedPage(suburl) {
     try {
         const response = await axios.get(BASE_URL + suburl, {
             headers: { ...VIXSRC_HEADERS, Accept: 'text/html,application/xhtml+xml,*/*' },
-            timeout: 10000,
+            timeout: 3000,
             responseType: 'text'
         });
         if (response.status !== 200) return null;

@@ -1,0 +1,8 @@
+{
+  "name": "TMDB Embed API",
+  "description": "Standalone streaming embed source aggregation API (TMDB ID in, streams out) and admin dashboard.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

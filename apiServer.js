@@ -394,7 +394,7 @@ app.get('/api/streams/:provider/:type/:tmdbId', async (req,res) => {
   }
 });
 
-const PORT = config.port;
+const PORT = Number(process.env.PORT) || config.port || 3000;
 const HOST = process.env.BIND_HOST || '0.0.0.0';
 const server = app.listen(PORT, HOST, () => {
   console.log(`TMDB Embed REST API listening on http://${HOST}:${PORT}`);

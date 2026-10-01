@@ -5,6 +5,7 @@ const cheerio = require('cheerio');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const { config } = require('../utils/config');
 // Redis removed: all caching now uses filesystem only.
 
 // --- Cookie Management --- (removed unused cookieIndex/detectedOssGroup)
@@ -1251,6 +1252,12 @@ const fetchSourcesForSingleFid = async (fidToProcess, shareKey, regionPreference
             try {
                 const jsonResponse = JSON.parse(playerContent);
                 if (jsonResponse.msg) {
+                    if (jsonResponse.code === -1 || jsonResponse.msg === 'please login') {
+                        if (!userCookie) {
+                            console.log('    [FebBox] Login required: User cookie needed for FebBox streams.');
+                            return [];
+                        }
+                    }
                     console.log(`    FebBox API Error: ${jsonResponse.code} - ${jsonResponse.msg}`);
                     // Check for region-specific errors
                     if (jsonResponse.code === 1002 ||
@@ -1873,46 +1880,47 @@ const getStreamsFromTmdbId = async (tmdbType, tmdbId, seasonNum = null, episodeN
     console.time(mainTimerLabel);
     console.log(`Getting streams for TMDB ${tmdbType}/${tmdbId}${seasonNum !== null ? `, Season ${seasonNum}` : ''}${episodeNum !== null ? `, Episode ${episodeNum}` : ''}`);
 
-    // PRIMARY METHOD: Try PStream API first (if enabled)
+    // PRIMARY METHOD: Try PStream API first (if enabled in config)
+    if (config.enablePStreamApi) {
+        try {
+            // Get TMDB data to extract IMDB ID
+            const tmdbData = await getTmdbDataForPStream(tmdbType, tmdbId);
+            if (tmdbData && tmdbData.imdbId) {
+                console.log(`[PStream Primary] Attempting PStream API for IMDB ID: ${tmdbData.imdbId}`);
 
-    try {
-        // Get TMDB data to extract IMDB ID
-        const tmdbData = await getTmdbDataForPStream(tmdbType, tmdbId);
-        if (tmdbData && tmdbData.imdbId) {
-            console.log(`[PStream Primary] Attempting PStream API for IMDB ID: ${tmdbData.imdbId}`);
+                const pstreamStreams = await getStreamsFromPStreamAPI(
+                    tmdbData.imdbId,
+                    tmdbType,
+                    seasonNum,
+                    episodeNum,
+                    regionPreference,
+                    userCookie
+                );
 
-            const pstreamStreams = await getStreamsFromPStreamAPI(
-                tmdbData.imdbId,
-                tmdbType,
-                seasonNum,
-                episodeNum,
-                regionPreference,
-                userCookie
-            );
+                if (pstreamStreams && pstreamStreams.length > 0) {
+                    console.log(`[PStream Primary] SUCCESS: Found ${pstreamStreams.length} streams from PStream API`);
 
-            if (pstreamStreams && pstreamStreams.length > 0) {
-                console.log(`[PStream Primary] SUCCESS: Found ${pstreamStreams.length} streams from PStream API`);
+                    // Fetch sizes for PStream streams
+                    if (pstreamStreams.length > 0) {
+                        const sizePromises = pstreamStreams.map(async (stream) => {
+                            stream.size = await fetchStreamSize(stream.url);
+                            return stream;
+                        });
+                        await Promise.all(sizePromises); // removed unused streamsWithSizes var
+                    }
 
-                // Fetch sizes for PStream streams
-                if (pstreamStreams.length > 0) {
-                    const sizePromises = pstreamStreams.map(async (stream) => {
-                        stream.size = await fetchStreamSize(stream.url);
-                        return stream;
-                    });
-                    await Promise.all(sizePromises); // removed unused streamsWithSizes var
+                    const sortedStreams = sortStreamsByQuality(pstreamStreams);
+                    console.timeEnd(mainTimerLabel);
+                    return sortedStreams;
+                } else {
+                    console.log(`[PStream Primary] No streams found from PStream API, falling back to FebBox`);
                 }
-
-                const sortedStreams = sortStreamsByQuality(pstreamStreams);
-                console.timeEnd(mainTimerLabel);
-                return sortedStreams;
             } else {
-                console.log(`[PStream Primary] No streams found from PStream API, falling back to FebBox`);
+                console.log(`[PStream Primary] Could not get IMDB ID from TMDB data, falling back to FebBox`);
             }
-        } else {
-            console.log(`[PStream Primary] Could not get IMDB ID from TMDB data, falling back to FebBox`);
+        } catch (error) {
+            console.warn(`[PStream Primary] PStream API unavailable: ${error.message}, falling back to FebBox`);
         }
-    } catch (error) {
-        console.error(`[PStream Primary] Error with PStream API: ${error.message}, falling back to FebBox`);
     }
 
     // FALLBACK METHOD: Use original FebBox/ShowBox logic
@@ -2384,12 +2392,6 @@ const processShowWithSeasonsEpisodes = async (febboxUrl, showboxTitle, seasonNum
 
                 const folderResponse = await axios.get(finalFolderUrl, axiosConfigFolder);
                 console.log(`  FebBox folder list response status: ${folderResponse.status}`);
-                console.log(`  FebBox folder list response content-type: ${folderResponse.headers['content-type']}`);
-                // Log the beginning of the data to inspect its structure
-                const responseDataPreview = (typeof folderResponse.data === 'string')
-                    ? folderResponse.data.substring(0, 500)
-                    : JSON.stringify(folderResponse.data).substring(0, 500);
-                console.log(`  FebBox folder list response data (preview): ${responseDataPreview}`);
 
                 if (folderResponse.data && typeof folderResponse.data === 'object' && folderResponse.data.html) {
                     folderHtml = folderResponse.data.html;
@@ -2850,10 +2852,7 @@ const getStreamsFromPStreamAPI = async (imdbId, tmdbType, seasonNum = null, epis
         return streams;
 
     } catch (error) {
-        console.error(`[PStream] Error fetching streams: ${error.message}`);
-        if (error.response) {
-            console.error(`[PStream] Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
-        }
+        console.warn(`[PStream] PStream API fetch unavailable: ${error.message}`);
         console.timeEnd(timerLabel);
         return [];
     }

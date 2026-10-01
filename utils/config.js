@@ -104,12 +104,18 @@ function normalizeConfig(base) {
   // Set defaults for provider enable flags
   providerNames.forEach(name => {
     const flag = `enable${name.charAt(0).toUpperCase() + name.slice(1)}Provider`;
-    if (cfg[flag] === undefined) cfg[flag] = true; // Default to enabled
+    if (cfg[flag] === undefined) {
+      if (name === 'videasy' || name === 'hdghartv') {
+        cfg[flag] = false; // Downstream services discontinued/offline
+      } else {
+        cfg[flag] = true; // Default to enabled
+      }
+    }
   });
   
   // Default values for other flags
   if (cfg.disableCache === undefined) cfg.disableCache = false;
-  if (cfg.enablePStreamApi === undefined) cfg.enablePStreamApi = true;
+  if (cfg.enablePStreamApi === undefined) cfg.enablePStreamApi = false; // PStream domain has expired
   if (cfg.enableProxy === undefined) cfg.enableProxy = false; // default off
   // Proxy features removed; always use direct connections
   if (cfg.disableUrlValidation === undefined) cfg.disableUrlValidation = false;

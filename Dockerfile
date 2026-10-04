@@ -1,15 +1,14 @@
 # ---------- Build Stage ----------
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 ARG VERSION=dev
 WORKDIR /app
 
 # Install only production dependencies first (leveraging cache)
 COPY package.json ./
 # Using npm install instead of npm ci because lock file appears out-of-sync
-# If you later regenerate lock (npm install locally) you can revert to npm ci for reproducibility
 RUN npm install --omit=dev
 
-# Copy only required source (avoid sending screenshots, node_modules already installed)
+# Copy only required source
 COPY apiServer.js ./
 COPY providers ./providers
 COPY proxy ./proxy
@@ -18,7 +17,7 @@ COPY utils ./utils
 COPY README.md ./
 
 # ---------- Runtime Stage ----------
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 ARG VERSION=dev
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -43,7 +42,7 @@ COPY --from=build /app/README.md ./
 EXPOSE 3000
 
 # Ensure runtime user owns app directory for writes (overrides, restart marker)
-RUN chown -R app:app /app
+RUN mkdir -p /app/utils && chown -R app:app /app && chmod -R 775 /app/utils
 USER app
 
 # Labels / metadata
@@ -53,7 +52,8 @@ LABEL org.opencontainers.image.title="TMDB Embed API" \
     org.opencontainers.image.source="https://github.com/Inside4ndroid/TMDB-Embed-API" \
     org.opencontainers.image.licenses="MIT"
 
-# Healthcheck (simple)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://localhost:${PORT:-3000}/api/health || exit 1
+# Healthcheck using Node fetch directly against 127.0.0.1 (avoids IPv6 localhost resolution issues in Alpine)
+HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["node","apiServer.js"]

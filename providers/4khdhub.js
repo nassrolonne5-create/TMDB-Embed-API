@@ -15,7 +15,7 @@ console.log('[4KHDHub] r2.dev links will be removed (permanent policy)');
 // --- Caching Configuration ---
 const CACHE_ENABLED = process.env.DISABLE_CACHE !== 'true';
 console.log(`[4KHDHub] Internal cache is ${CACHE_ENABLED ? 'enabled' : 'disabled'}.`);
-const CACHE_DIR = process.env.VERCEL ? path.join('/tmp', '.4khdhub_cache') : path.join(__dirname, '.cache', '4khdhub');
+const CACHE_DIR = process.env.FOURKHDHUB_CACHE_DIR || path.join(require('os').tmpdir(), '4khdhub');
 
 // Caching layer simplified: currently inert placeholders (extend for FS persistence if desired)
 

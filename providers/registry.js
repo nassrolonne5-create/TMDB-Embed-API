@@ -20,7 +20,10 @@ const providerFunctionMap = {
   'netmirror.js': 'getNetmirrorStreams',
   'onetouchtv.js': 'getOnetouchtvStreams',
   'zxcstreams.js': 'getZxcstreamsStreams',
-  'vidrock.js': 'getVidrockStreams'
+  'vidrock.js': 'getVidrockStreams',
+  'vidrift.js': 'getVidriftStreams',
+  'vidfast.js': 'getVidfastStreams',
+  'vidsrc.js': 'getVidsrcStreams'
 };
 
 // Stats for debug endpoint

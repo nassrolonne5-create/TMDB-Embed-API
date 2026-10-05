@@ -68,6 +68,28 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
             const decryptedUrl = decryptVidrockUrl(serverInfo.url);
             if (!decryptedUrl) continue;
 
+            // Probe stream to ensure it is not Cloudflare-blocked (403) or an HTML error page
+            try {
+                const probe = await axios.get(decryptedUrl, {
+                    headers: {
+                        'Referer': 'https://vidrock.to/',
+                        'User-Agent': HEADERS['User-Agent'],
+                        'Range': 'bytes=0-100'
+                    },
+                    timeout: 2500,
+                    responseType: 'text',
+                    validateStatus: (s) => (s >= 200 && s < 400) || s === 206
+                });
+                const ct = (probe.headers['content-type'] || '').toLowerCase();
+                if (ct.includes('text/html') || probe.status >= 400) {
+                    console.log(`[Vidrock] Skipping ${serverName}: returned HTTP ${probe.status} / HTML block page.`);
+                    continue;
+                }
+            } catch (err) {
+                console.log(`[Vidrock] Skipping ${serverName}: stream unreachable (${err.message}).`);
+                continue;
+            }
+
             streams.push({
                 name: `Vidrock (${serverName})`,
                 title: `Vidrock - ${serverName}`,

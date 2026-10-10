@@ -36,13 +36,25 @@ function filterByCodecs(streams, exclude) {
     return true;
   });
 }
+function filterNonPlayableEmbeds(streams) {
+  if (!Array.isArray(streams)) return [];
+  return streams.filter(s => {
+    if (!s || typeof s !== 'object' || !s.url) return false;
+    if (s.isEmbed || s.type === 'iframe') return false;
+    // Reject HTML embed URLs that cannot be played in native video tag / HLS.js
+    if (/\/embed(\/|\?|$)/i.test(s.url) || /\/e\/[a-zA-Z0-9]/i.test(s.url)) return false;
+    return true;
+  });
+}
+
 function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsConfig) {
   let minQuality = null;
   if (minQualitiesConfig) {
     if (typeof minQualitiesConfig === 'string') minQuality = minQualitiesConfig;
     else if (minQualitiesConfig.default) minQuality = minQualitiesConfig.default;
   }
-  let filtered = filterByMinQuality(streams, minQuality);
+  let filtered = filterNonPlayableEmbeds(streams);
+  filtered = filterByMinQuality(filtered, minQuality);
   filtered = filterByCodecs(filtered, excludeCodecsConfig);
   return filtered;
 }

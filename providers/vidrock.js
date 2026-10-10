@@ -11,7 +11,7 @@ const VIDROCK_DOMAINS = [
 const VIDROCK_API_PRIMARY = 'https://vidrock.net/api';
 const VIDROCK_API_FALLBACK = 'https://vidrock.to/api';
 const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
     'Referer': 'https://vidrock.to/',
     'Origin': 'https://vidrock.to'
 };
@@ -59,12 +59,7 @@ async function scrapeVidrock(tmdbId, mediaType = 'movie', season = null, episode
 }
 
 async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
-    console.log(`[Vidrock] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
-
-    const baseUrl = 'https://vidrock.net';
-    const embedUrl = mediaType === 'tv'
-        ? `${baseUrl}/embed/tv/${tmdbId}/${seasonNum || 1}/${episodeNum || 1}`
-        : `${baseUrl}/embed/movie/${tmdbId}`;
+    console.log(`[Vidrock] Fetching direct HLS streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
 
     try {
         const path = mediaType === 'tv'
@@ -79,7 +74,7 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                 if (!serverInfo || typeof serverInfo !== 'object' || !serverInfo.url) continue;
 
                 const decryptedUrl = decryptVidrockUrl(serverInfo.url);
-                if (!decryptedUrl) continue;
+                if (!decryptedUrl || !decryptedUrl.includes('.m3u8')) continue;
 
                 // Probe stream to ensure it is not Cloudflare-blocked (403) or an HTML error page
                 try {
@@ -104,11 +99,12 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                 }
 
                 streams.push({
+                    provider: 'Vidrock',
                     name: `Vidrock (${serverName})`,
-                    title: `Vidrock - ${serverName}`,
+                    title: `Vidrock 1080p`,
                     url: decryptedUrl,
                     quality: '1080p',
-                    provider: 'Vidrock',
+                    type: 'hls',
                     headers: {
                         'Referer': 'https://vidrock.to/',
                         'User-Agent': HEADERS['User-Agent']
@@ -117,32 +113,11 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
             }
         }
 
-        // If no direct streams extracted, provide the verified embed player
-        if (streams.length === 0) {
-            streams.push({
-                name: 'Vidrock',
-                title: 'Vidrock Player',
-                url: embedUrl,
-                quality: '1080p',
-                provider: 'Vidrock',
-                isEmbed: true,
-                type: 'iframe'
-            });
-        }
-
-        console.log(`[Vidrock] Successfully extracted ${streams.length} stream(s).`);
+        console.log(`[Vidrock] Successfully extracted ${streams.length} direct HLS stream(s).`);
         return streams;
     } catch (error) {
         console.error(`[Vidrock] Error extracting stream: ${error.message}`);
-        return [{
-            name: 'Vidrock',
-            title: 'Vidrock Player',
-            url: embedUrl,
-            quality: '1080p',
-            provider: 'Vidrock',
-            isEmbed: true,
-            type: 'iframe'
-        }];
+        return [];
     }
 }
 

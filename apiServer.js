@@ -9,6 +9,7 @@ const { listProviders, getProvider, getCookieStats } = require('./providers/regi
 const { createProxyRoutes, processStreamsForProxy } = require('./proxy/proxyServer');
 const { resolveImdbId } = require('./utils/tmdb');
 const { applyFilters } = require('./utils/streamFilters');
+const { getDirectStreams } = require('./scrapers/directExtractors');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -321,7 +322,7 @@ app.get('/api/providers/:name', (req,res) => {
 // Aggregate streams across all enabled providers
 app.get('/api/streams/:type/:tmdbId', async (req,res) => {
   const { type, tmdbId } = req.params;
-  if (!['movie','series'].includes(type)) return res.status(400).json({ success:false, error:'INVALID_TYPE' });
+  if (!['movie','series','tv'].includes(type)) return res.status(400).json({ success:false, error:'INVALID_TYPE' });
   const season = req.query.season ? Number(req.query.season) : null;
   const episode = req.query.episode ? Number(req.query.episode) : null;
   try {
@@ -330,25 +331,42 @@ app.get('/api/streams/:type/:tmdbId', async (req,res) => {
     const imdbId = await resolveImdbId(tmdbType, tmdbId); if (imdbId) metrics.tmdbToImdbLookups++;
     const selectedProviders = (config.defaultProviders.length ? config.defaultProviders : listProviders().map(p=>p.name));
     const providerTimings = {};
-    const results = await Promise.all(selectedProviders.map(async name => {
-      const prov = getProvider(name);
-      if (!prov || !prov.enabled) return [];
-      metrics.providerCalls[name] = (metrics.providerCalls[name]||0)+1;
-      try {
-        console.log(`[api] invoking provider ${name} for tmdbId=${tmdbId}`);
-        const t0 = Date.now();
-        const r = await prov.fetch({ tmdbId, type, season, episode, imdbId, filters:{ } });
-        providerTimings[name] = Date.now()-t0;
-        console.log(`[api] provider ${name} returned ${Array.isArray(r)?r.length:0} streams`);
-        return r;
-      } catch (e) {
-        console.error(`[api] provider ${name} failed:`, e.message);
-        providerTimings[name] = null;
+
+    const [directVidStreams, results] = await Promise.all([
+      getDirectStreams(tmdbId, season, episode).catch(err => {
+        console.warn('[directExtractors] error:', err.message);
         return [];
+      }),
+      Promise.all(selectedProviders.map(async name => {
+        const prov = getProvider(name);
+        if (!prov || !prov.enabled) return [];
+        metrics.providerCalls[name] = (metrics.providerCalls[name]||0)+1;
+        try {
+          console.log(`[api] invoking provider ${name} for tmdbId=${tmdbId}`);
+          const t0 = Date.now();
+          const r = await prov.fetch({ tmdbId, type: tmdbType, season, episode, imdbId, filters:{ } });
+          providerTimings[name] = Date.now()-t0;
+          console.log(`[api] provider ${name} returned ${Array.isArray(r)?r.length:0} streams`);
+          return r;
+        } catch (e) {
+          console.error(`[api] provider ${name} failed:`, e.message);
+          providerTimings[name] = null;
+          return [];
+        }
+      }))
+    ]);
+
+    // Merge direct HLS streams and provider results, deduplicating by URL
+    const seenUrls = new Set();
+    const combined = [];
+    for (const s of [...directVidStreams, ...results.flat()]) {
+      if (s && s.url && !seenUrls.has(s.url)) {
+        seenUrls.add(s.url);
+        combined.push(s);
       }
-    }));
-    let streams = results.flat();
-    streams = applyFilters(streams, 'aggregate', config.minQualities, config.excludeCodecs);
+    }
+
+    let streams = applyFilters(combined, 'aggregate', config.minQualities, config.excludeCodecs);
     metrics.streamsReturned += streams.length;
     if (config.enableProxy) {
       const serverUrl = `${req.protocol}://${req.get('host')}`;
@@ -366,7 +384,7 @@ app.get('/api/streams/:type/:tmdbId', async (req,res) => {
 // Provider-specific streams
 app.get('/api/streams/:provider/:type/:tmdbId', async (req,res) => {
   const { provider, type, tmdbId } = req.params;
-  if (!['movie','series'].includes(type)) return res.status(400).json({ success:false, error:'INVALID_TYPE' });
+  if (!['movie','series','tv'].includes(type)) return res.status(400).json({ success:false, error:'INVALID_TYPE' });
   const season = req.query.season ? Number(req.query.season) : null;
   const episode = req.query.episode ? Number(req.query.episode) : null;
   const prov = getProvider(provider);
@@ -378,7 +396,7 @@ app.get('/api/streams/:provider/:type/:tmdbId', async (req,res) => {
     const tmdbType = type === 'movie' ? 'movie' : 'tv';
     const imdbId = await resolveImdbId(tmdbType, tmdbId); if (imdbId) metrics.tmdbToImdbLookups++;
     const t0 = Date.now();
-    let streams = await prov.fetch({ tmdbId, type, season, episode, imdbId, filters:{} });
+    let streams = await prov.fetch({ tmdbId, type: tmdbType, season, episode, imdbId, filters:{} });
     const providerTimings = { [prov.name]: Date.now()-t0 };
     streams = applyFilters(streams, prov.name, config.minQualities, config.excludeCodecs);
     metrics.streamsReturned += streams.length;

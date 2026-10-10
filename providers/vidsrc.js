@@ -220,6 +220,7 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
 }
 
 module.exports = {
+    extractVidSrc: scrapeVidSrc,
     scrapeVidSrc,
     getVidsrcStreams
 };

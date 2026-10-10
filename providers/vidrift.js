@@ -71,6 +71,7 @@ async function getVidriftStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
 }
 
 module.exports = {
+    extractVidRift: scrapeVidrift,
     scrapeVidrift,
     getVidriftStreams
 };

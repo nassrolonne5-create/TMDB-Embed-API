@@ -37,7 +37,7 @@ async function getEffectiveCookies() {
 function getProviderFiles() {
   const providersDir = path.join(__dirname);
   return fs.readdirSync(providersDir)
-    .filter(file => file.endsWith('.js') && file !== 'registry.js')
+    .filter(file => file.endsWith('.js') && file !== 'registry.js' && file !== 'directExtractors.js')
     .map(file => ({
       name: path.parse(file).name.toLowerCase(),
       file: file,

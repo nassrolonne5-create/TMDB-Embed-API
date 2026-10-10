@@ -123,6 +123,7 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
 
 module.exports = {
     VIDROCK_DOMAINS,
+    extractVidrock: scrapeVidrock,
     scrapeVidrock,
     getVidrockStreams
 };

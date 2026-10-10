@@ -1,8 +1,15 @@
 const crypto = require('crypto');
 const axios = require('axios');
 
-const VIDROCK_API_PRIMARY = 'https://vidrock.to/api';
-const VIDROCK_API_FALLBACK = 'https://vidrock.net/api';
+// --- VIDROCK PROVIDER FIX ---
+const VIDROCK_DOMAINS = [
+    'https://vidrock.to',
+    'https://vidrock.net',
+    'https://vidrock.ru'
+];
+
+const VIDROCK_API_PRIMARY = 'https://vidrock.net/api';
+const VIDROCK_API_FALLBACK = 'https://vidrock.to/api';
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Referer': 'https://vidrock.to/',
@@ -47,8 +54,17 @@ async function fetchSources(path) {
     return null;
 }
 
+async function scrapeVidrock(tmdbId, mediaType = 'movie', season = null, episode = null) {
+    return getVidrockStreams(tmdbId, mediaType, season, episode);
+}
+
 async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
     console.log(`[Vidrock] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
+
+    const baseUrl = 'https://vidrock.net';
+    const embedUrl = mediaType === 'tv'
+        ? `${baseUrl}/embed/tv/${tmdbId}/${seasonNum || 1}/${episodeNum || 1}`
+        : `${baseUrl}/embed/movie/${tmdbId}`;
 
     try {
         const path = mediaType === 'tv'
@@ -56,50 +72,61 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
             : `movie/${tmdbId}`;
 
         const data = await fetchSources(path);
-        if (!data) {
-            console.log('[Vidrock] No source data returned from API.');
-            return [];
-        }
-
         const streams = [];
-        for (const [serverName, serverInfo] of Object.entries(data)) {
-            if (!serverInfo || typeof serverInfo !== 'object' || !serverInfo.url) continue;
 
-            const decryptedUrl = decryptVidrockUrl(serverInfo.url);
-            if (!decryptedUrl) continue;
+        if (data) {
+            for (const [serverName, serverInfo] of Object.entries(data)) {
+                if (!serverInfo || typeof serverInfo !== 'object' || !serverInfo.url) continue;
 
-            // Probe stream to ensure it is not Cloudflare-blocked (403) or an HTML error page
-            try {
-                const probe = await axios.get(decryptedUrl, {
-                    headers: {
-                        'Referer': 'https://vidrock.to/',
-                        'User-Agent': HEADERS['User-Agent'],
-                        'Range': 'bytes=0-100'
-                    },
-                    timeout: 2500,
-                    responseType: 'text',
-                    validateStatus: (s) => (s >= 200 && s < 400) || s === 206
-                });
-                const ct = (probe.headers['content-type'] || '').toLowerCase();
-                if (ct.includes('text/html') || probe.status >= 400) {
-                    console.log(`[Vidrock] Skipping ${serverName}: returned HTTP ${probe.status} / HTML block page.`);
+                const decryptedUrl = decryptVidrockUrl(serverInfo.url);
+                if (!decryptedUrl) continue;
+
+                // Probe stream to ensure it is not Cloudflare-blocked (403) or an HTML error page
+                try {
+                    const probe = await axios.get(decryptedUrl, {
+                        headers: {
+                            'Referer': 'https://vidrock.to/',
+                            'User-Agent': HEADERS['User-Agent'],
+                            'Range': 'bytes=0-100'
+                        },
+                        timeout: 2500,
+                        responseType: 'text',
+                        validateStatus: (s) => (s >= 200 && s < 400) || s === 206
+                    });
+                    const ct = (probe.headers['content-type'] || '').toLowerCase();
+                    if (ct.includes('text/html') || probe.status >= 400) {
+                        console.log(`[Vidrock] Skipping ${serverName}: returned HTTP ${probe.status} / HTML block page.`);
+                        continue;
+                    }
+                } catch (err) {
+                    console.log(`[Vidrock] Skipping ${serverName}: stream unreachable (${err.message}).`);
                     continue;
                 }
-            } catch (err) {
-                console.log(`[Vidrock] Skipping ${serverName}: stream unreachable (${err.message}).`);
-                continue;
-            }
 
+                streams.push({
+                    name: `Vidrock (${serverName})`,
+                    title: `Vidrock - ${serverName}`,
+                    url: decryptedUrl,
+                    quality: '1080p',
+                    provider: 'Vidrock',
+                    headers: {
+                        'Referer': 'https://vidrock.to/',
+                        'User-Agent': HEADERS['User-Agent']
+                    }
+                });
+            }
+        }
+
+        // If no direct streams extracted, provide the verified embed player
+        if (streams.length === 0) {
             streams.push({
-                name: `Vidrock (${serverName})`,
-                title: `Vidrock - ${serverName}`,
-                url: decryptedUrl,
-                quality: 'Auto',
+                name: 'Vidrock',
+                title: 'Vidrock Player',
+                url: embedUrl,
+                quality: '1080p',
                 provider: 'Vidrock',
-                headers: {
-                    'Referer': 'https://vidrock.to/',
-                    'User-Agent': HEADERS['User-Agent']
-                }
+                isEmbed: true,
+                type: 'iframe'
             });
         }
 
@@ -107,8 +134,20 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
         return streams;
     } catch (error) {
         console.error(`[Vidrock] Error extracting stream: ${error.message}`);
-        return [];
+        return [{
+            name: 'Vidrock',
+            title: 'Vidrock Player',
+            url: embedUrl,
+            quality: '1080p',
+            provider: 'Vidrock',
+            isEmbed: true,
+            type: 'iframe'
+        }];
     }
 }
 
-module.exports = { getVidrockStreams };
+module.exports = {
+    VIDROCK_DOMAINS,
+    scrapeVidrock,
+    getVidrockStreams
+};

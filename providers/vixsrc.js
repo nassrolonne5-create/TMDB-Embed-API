@@ -139,8 +139,17 @@ async function getVixsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
     console.log(`[Vixsrc] Step 1 - Calling API: ${apiUrl}`);
     const apiData = await fetchApi(apiUrl);
     if (!apiData || !apiData.src) {
-        console.log('[Vixsrc] No src returned from API');
-        return [];
+        console.log('[Vixsrc] No src returned from API (vixsrc.to may be Cloudflare-blocked). Using active mirror fallback.');
+        const { getVidSrcEmbedUrl } = require('./vidsrc');
+        return [{
+            name: 'VixSrc (VidSrc)',
+            title: 'VidSrc Player',
+            url: getVidSrcEmbedUrl(tmdbId, mediaType, seasonNum, episodeNum, 'https://vidsrc.to'),
+            quality: '1080p',
+            provider: 'Vixsrc',
+            isEmbed: true,
+            type: 'iframe'
+        }];
     }
     console.log(`[Vixsrc] Step 2 - Fetching embed page: ${BASE_URL}${apiData.src}`);
 

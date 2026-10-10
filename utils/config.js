@@ -32,6 +32,11 @@ function parseCookies(raw) {
 function readOverrideFile() {
   try {
     if (fs.existsSync(OVERRIDE_PATH)) {
+      const stat = fs.statSync(OVERRIDE_PATH);
+      if (stat.isDirectory()) {
+        console.warn('[config] OVERRIDE_PATH is a directory, using default in-memory config');
+        return {};
+      }
       const raw = fs.readFileSync(OVERRIDE_PATH, 'utf8');
       const data = JSON.parse(raw);
       return data && typeof data === 'object' ? data : {};
@@ -44,6 +49,11 @@ function readOverrideFile() {
 
 function writeOverrideFile(obj) {
   try {
+    if (fs.existsSync(OVERRIDE_PATH) && fs.statSync(OVERRIDE_PATH).isDirectory()) {
+      console.warn('[config] OVERRIDE_PATH is a directory, writing to fallback file');
+      fs.writeFileSync(path.join(OVERRIDE_PATH, 'user-config.json'), JSON.stringify(obj, null, 2));
+      return true;
+    }
     fs.writeFileSync(OVERRIDE_PATH, JSON.stringify(obj, null, 2));
     return true;
   } catch (e) {

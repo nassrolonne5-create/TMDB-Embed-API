@@ -9,7 +9,18 @@ const { listProviders, getProvider, getCookieStats } = require('./providers/regi
 const { createProxyRoutes, processStreamsForProxy } = require('./proxy/proxyServer');
 const { resolveImdbId } = require('./utils/tmdb');
 const { applyFilters } = require('./utils/streamFilters');
-const { getDirectStreams } = require('./scrapers/directExtractors');
+
+let getDirectStreams;
+try {
+  getDirectStreams = require('./scrapers/directExtractors').getDirectStreams;
+} catch (e1) {
+  try {
+    getDirectStreams = require('./providers/directExtractors').getDirectStreams;
+  } catch (e2) {
+    console.warn('[directExtractors] module not found, fallback to empty:', e1.message);
+    getDirectStreams = async () => [];
+  }
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -235,8 +246,8 @@ app.post('/api/restart', (req,res) => {
 });
 
 // --- Basic informational endpoints ---
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'tmdb-embed-api', time: new Date().toISOString() });
+app.get(['/health', '/api/health'], (req, res) => {
+  res.json({ ok: true, status: 'ok', service: 'tmdb-embed-api', uptime: Math.round(process.uptime()), time: new Date().toISOString() });
 });
 
 // Metrics endpoint

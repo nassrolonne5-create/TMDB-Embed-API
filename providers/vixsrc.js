@@ -179,4 +179,10 @@ async function getVixsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
     return sources;
 }
 
-module.exports = { getVixsrcStreams };
+const { VIDSRC_DOMAINS, getVidSrcEmbedUrl } = require('./vidsrc');
+
+module.exports = {
+    VIDSRC_DOMAINS,
+    getVidSrcEmbedUrl,
+    getVixsrcStreams
+};

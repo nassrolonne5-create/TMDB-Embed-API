@@ -38,13 +38,18 @@ function filterByCodecs(streams, exclude) {
 }
 function filterNonPlayableEmbeds(streams) {
   if (!Array.isArray(streams)) return [];
-  return streams.filter(s => {
+  const playable = streams.filter(s => {
     if (!s || typeof s !== 'object' || !s.url) return false;
     if (s.isEmbed || s.type === 'iframe') return false;
     // Reject HTML embed URLs that cannot be played in native video tag / HLS.js
     if (/\/embed(\/|\?|$)/i.test(s.url) || /\/e\/[a-zA-Z0-9]/i.test(s.url)) return false;
     return true;
   });
+
+  // If direct playable HLS/MP4 streams exist, return them.
+  // Otherwise, allow fallback embed players so the API never returns empty.
+  if (playable.length > 0) return playable;
+  return streams.filter(s => s && typeof s === 'object' && s.url);
 }
 
 function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsConfig) {

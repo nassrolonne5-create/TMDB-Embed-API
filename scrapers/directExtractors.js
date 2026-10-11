@@ -22,9 +22,10 @@ async function extractVidrock(tmdbId, season = null, episode = null) {
   const streams = [];
   try {
     const isTV = Boolean(season && episode);
+    const baseUrl = 'https://vidrock.net';
     const embedUrl = isTV
-      ? `https://vidrock.to/embed/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidrock.to/embed/movie/${tmdbId}`;
+      ? `${baseUrl}/embed/tv/${tmdbId}/${season}/${episode}`
+      : `${baseUrl}/embed/movie/${tmdbId}`;
 
     const { data: html } = await axios.get(embedUrl, {
       headers: {
@@ -96,18 +97,39 @@ async function extractVidrock(tmdbId, season = null, episode = null) {
       const { getVidrockStreams } = require('../providers/vidrock');
       const fallbackStreams = await getVidrockStreams(tmdbId, season && episode ? 'tv' : 'movie', season, episode);
       for (const s of fallbackStreams) {
-        if (s && s.url && s.url.includes('.m3u8')) {
+        if (s && s.url) {
           streams.push({
             ...s,
             quality: s.quality || '1080P',
-            type: 'hls',
-            isM3U8: true,
+            type: s.type || (s.url.includes('.m3u8') ? 'hls' : 'iframe'),
+            isM3U8: Boolean(s.url.includes('.m3u8')),
           });
         }
       }
     } catch (_) {
       /* ignore fallback error */
     }
+  }
+
+  // Fallback to active mirror embed if 0 direct streams
+  if (streams.length === 0) {
+    const isTV = Boolean(season && episode);
+    const embedUrl = isTV
+      ? `https://vidrock.net/embed/tv/${tmdbId}/${season}/${episode}`
+      : `https://vidrock.net/embed/movie/${tmdbId}`;
+    streams.push({
+      provider: 'Vidrock',
+      name: 'Vidrock (Embed)',
+      title: 'Vidrock Player',
+      url: embedUrl,
+      quality: '1080P',
+      type: 'iframe',
+      isEmbed: true,
+      headers: {
+        Referer: 'https://vidrock.to/',
+        'User-Agent': USER_AGENT,
+      },
+    });
   }
 
   return streams;
@@ -207,18 +229,18 @@ async function extractVidSrc(tmdbId, season = null, episode = null) {
     console.warn('[Scraper] VidSrc RCP extraction notice:', err.message);
   }
 
-  // Robust fallback: if RCP regex returned 0 streams, resolve via direct tokenized gateway
+  // Robust fallback: if RCP regex returned 0 streams, resolve via direct tokenized gateway or mirrors
   if (streams.length === 0) {
     try {
       const { getVidsrcStreams } = require('../providers/vidsrc');
       const fallbackStreams = await getVidsrcStreams(tmdbId, season && episode ? 'tv' : 'movie', season, episode);
       for (const s of fallbackStreams) {
-        if (s && s.url && s.url.includes('.m3u8')) {
+        if (s && s.url) {
           streams.push({
             ...s,
             quality: s.quality || '1080P',
-            type: 'hls',
-            isM3U8: true,
+            type: s.type || (s.url.includes('.m3u8') ? 'hls' : 'iframe'),
+            isM3U8: Boolean(s.url.includes('.m3u8')),
           });
         }
       }
@@ -258,16 +280,17 @@ function decodeVidSrcCipher(encoded) {
  */
 async function extractVidRift(tmdbId, season = null, episode = null) {
   const streams = [];
+  const embedDomain = 'https://embed.vidrift.net';
   try {
     const isTV = Boolean(season && episode);
     const embedUrl = isTV
-      ? `https://vidrift.net/embed/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidrift.net/embed/movie/${tmdbId}`;
+      ? `${embedDomain}/embed/tv/${tmdbId}/${season}/${episode}`
+      : `${embedDomain}/embed/movie/${tmdbId}`;
 
     const { data: html } = await axios.get(embedUrl, {
       headers: {
         'User-Agent': USER_AGENT,
-        Referer: 'https://vidrift.net/',
+        Referer: 'https://embed.vidrift.net/',
       },
       timeout: 6000,
     });
@@ -332,18 +355,18 @@ async function extractVidRift(tmdbId, season = null, episode = null) {
     console.warn('[Scraper] VidRift embed extraction notice:', err.message);
   }
 
-  // Robust fallback: if vidrift.net is down/404, resolve via direct OMSS / CinePro master HLS
+  // Robust fallback: if vidrift.net is down/404, resolve via direct OMSS or embed
   if (streams.length === 0) {
     try {
       const { getVidriftStreams } = require('../providers/vidrift');
       const fallbackStreams = await getVidriftStreams(tmdbId, season && episode ? 'tv' : 'movie', season, episode);
       for (const s of fallbackStreams) {
-        if (s && s.url && s.url.includes('.m3u8')) {
+        if (s && s.url) {
           streams.push({
             ...s,
             quality: s.quality || '1080P',
-            type: 'hls',
-            isM3U8: true,
+            type: s.type || (s.url.includes('.m3u8') ? 'hls' : 'iframe'),
+            isM3U8: Boolean(s.url.includes('.m3u8')),
           });
         }
       }

@@ -10,8 +10,11 @@ const VIDROCK_DOMAINS = [
 
 const VIDROCK_API_PRIMARY = 'https://vidrock.net/api';
 const VIDROCK_API_FALLBACK = 'https://vidrock.to/api';
+const VIDROCK_API_MIRROR = 'https://vidrock.ru/api';
+
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
+    'User-Agent': USER_AGENT,
     'Referer': 'https://vidrock.to/',
     'Origin': 'https://vidrock.to'
 };
@@ -38,7 +41,7 @@ function decryptVidrockUrl(encStr) {
 }
 
 async function fetchSources(path) {
-    for (const base of [VIDROCK_API_PRIMARY, VIDROCK_API_FALLBACK]) {
+    for (const base of [VIDROCK_API_PRIMARY, VIDROCK_API_FALLBACK, VIDROCK_API_MIRROR]) {
         try {
             const resp = await axios.get(`${base}/${path}`, {
                 headers: HEADERS,
@@ -55,7 +58,36 @@ async function fetchSources(path) {
 }
 
 async function scrapeVidrock(tmdbId, mediaType = 'movie', season = null, episode = null) {
-    return getVidrockStreams(tmdbId, mediaType, season, episode);
+    const baseUrl = 'https://vidrock.net';
+    const embedUrl = mediaType === 'tv'
+        ? `${baseUrl}/embed/tv/${tmdbId}/${season || 1}/${episode || 1}`
+        : `${baseUrl}/embed/movie/${tmdbId}`;
+
+    const streams = await getVidrockStreams(tmdbId, mediaType, season, episode);
+    if (streams && streams.length > 0) {
+        return streams.map((stream) => ({
+            name: stream.name || 'Vidrock (Atlas)',
+            title: stream.title || 'Vidrock 1080p',
+            url: stream.url,
+            quality: '1080p',
+            provider: 'Vidrock',
+            type: 'hls',
+            isM3U8: true,
+            headers: {
+                'Referer': 'https://vidrock.to/',
+                'User-Agent': USER_AGENT
+            }
+        }));
+    }
+
+    return [{
+        name: 'Vidrock (Embed)',
+        title: 'Vidrock Player',
+        url: embedUrl,
+        provider: 'Vidrock',
+        isEmbed: true,
+        type: 'iframe'
+    }];
 }
 
 async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
@@ -76,20 +108,20 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                 const decryptedUrl = decryptVidrockUrl(serverInfo.url);
                 if (!decryptedUrl || !decryptedUrl.includes('.m3u8')) continue;
 
-                // Probe stream to ensure it is not Cloudflare-blocked (403) or an HTML error page
+                // Probe stream to ensure it is alive without sending Range headers that CDNs drop
                 try {
                     const probe = await axios.get(decryptedUrl, {
                         headers: {
                             'Referer': 'https://vidrock.to/',
-                            'User-Agent': HEADERS['User-Agent'],
-                            'Range': 'bytes=0-100'
+                            'User-Agent': USER_AGENT
                         },
-                        timeout: 2500,
+                        timeout: 5000,
                         responseType: 'text',
                         validateStatus: (s) => (s >= 200 && s < 400) || s === 206
                     });
                     const ct = (probe.headers['content-type'] || '').toLowerCase();
-                    if (ct.includes('text/html') || probe.status >= 400) {
+                    const text = String(probe.data || '');
+                    if (probe.status >= 400 || (ct.includes('text/html') && !text.includes('#EXTM3U'))) {
                         console.log(`[Vidrock] Skipping ${serverName}: returned HTTP ${probe.status} / HTML block page.`);
                         continue;
                     }
@@ -105,9 +137,10 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                     url: decryptedUrl,
                     quality: '1080p',
                     type: 'hls',
+                    isM3U8: true,
                     headers: {
                         'Referer': 'https://vidrock.to/',
-                        'User-Agent': HEADERS['User-Agent']
+                        'User-Agent': USER_AGENT
                     }
                 });
             }

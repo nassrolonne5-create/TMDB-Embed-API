@@ -1,10 +1,26 @@
 const axios = require('axios');
 
-// --- VIDSRC PROVIDER (DIRECT HLS RESOLVER) ---
-// Frontend Architecture: Native HTML5 Video Player (<video> + HLS.js)
-// CRITICAL: NEVER return HTML embed URLs. Return ONLY direct .m3u8 master playlists.
+// --- VIDSRC PROVIDER FIX ---
+// BLOCKED: https://vixsrc.to (Cloudflare 403)
+// DEAD:    https://vidsrc.net, https://vidsrc.xyz
+// ACTIVE:  https://vidsrc.to, https://vidsrc.me, https://vidsrc.pm
 
+const VIDSRC_DOMAINS = [
+    'https://vidsrc.to',
+    'https://vidsrc.me',
+    'https://vidsrc.pm'
+];
+
+const REMOTE_SCRAPER_URL = process.env.REMOTE_SCRAPER_URL || 'http://62.171.179.144:3005';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+function getVidSrcEmbedUrl(tmdbId, mediaType = 'movie', season = null, episode = null) {
+    const isTv = mediaType === 'tv' || mediaType === 'series';
+    if (isTv) {
+        return `https://vidsrc.to/embed/tv/${tmdbId}/${season || 1}/${episode || 1}`;
+    }
+    return `https://vidsrc.to/embed/movie/${tmdbId}`;
+}
 
 async function fetchHostToken(origin, referer) {
     try {
@@ -63,11 +79,39 @@ async function scrapeVidSrc(tmdbId, mediaType = 'movie', season = null, episode 
 }
 
 async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
-    console.log(`[VidSrc] Fetching direct HLS streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
+    console.log(`[VidSrc] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
 
-    const isTv = mediaType === 'tv';
+    const isTv = mediaType === 'tv' || mediaType === 'series';
     const s = seasonNum || 1;
     const ep = episodeNum || 1;
+
+    // Step 0: Try remote scraper backend (which has full direct extraction)
+    try {
+        const remotePath = isTv
+            ? `${REMOTE_SCRAPER_URL}/api/streams/vidsrc/tv/${tmdbId}?season=${s}&episode=${ep}`
+            : `${REMOTE_SCRAPER_URL}/api/streams/vidsrc/movie/${tmdbId}`;
+
+        const remoteResp = await axios.get(remotePath, { timeout: 4500 });
+        if (remoteResp.data && Array.isArray(remoteResp.data.streams) && remoteResp.data.streams.length > 0) {
+            console.log(`[VidSrc] Resolved ${remoteResp.data.streams.length} stream(s) via remote scraper`);
+            return remoteResp.data.streams.map(stream => ({
+                provider: 'VidSrc',
+                name: stream.name || 'VidSrc (Primary)',
+                title: stream.title || 'VidSrc 1080p',
+                url: stream.url,
+                quality: stream.quality || '1080p',
+                type: stream.type || 'hls',
+                isM3U8: true,
+                headers: stream.headers || {
+                    'Referer': 'https://vidsrc.to/',
+                    'Origin': 'https://vidsrc.to',
+                    'User-Agent': UA
+                }
+            }));
+        }
+    } catch (err) {
+        // Continue to local decryption pipeline
+    }
 
     try {
         // Step 1: Request signed gateway API token from vsembed.ru
@@ -82,144 +126,123 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
                     ? `https://vsembed.ru/embed/tv/${tmdbId}/${s}/${ep}`
                     : `https://vsembed.ru/embed/movie/${tmdbId}/`
             },
-            timeout: 6000
+            timeout: 5000
         });
 
-        if (!vsSrcResp.data || !vsSrcResp.data.src) {
-            console.log('[VidSrc] No gateway src returned from vs_src.php');
-            return [];
-        }
+        if (vsSrcResp.data && vsSrcResp.data.src) {
+            const gatewayUrl = vsSrcResp.data.src;
+            const host = new URL(gatewayUrl).origin;
 
-        const gatewayUrl = vsSrcResp.data.src;
-        const host = new URL(gatewayUrl).origin;
-
-        // Step 2: Retrieve internal player configuration from gateway URL
-        const gwResp = await axios.get(gatewayUrl, {
-            headers: {
-                'User-Agent': UA,
-                'Referer': 'https://vsembed.ru/'
-            },
-            timeout: 6000,
-            responseType: 'text'
-        });
-
-        const cfgMatch = gwResp.data.match(/window\.CFG\s*=\s*(\{.*?\});/);
-        if (!cfgMatch) {
-            console.log('[VidSrc] window.CFG not found in gateway page');
-            return [];
-        }
-
-        const cfg = JSON.parse(cfgMatch[1]);
-        if (!cfg.playerUrl) {
-            console.log('[VidSrc] No playerUrl in window.CFG');
-            return [];
-        }
-
-        const playerUrl = `${host}${cfg.playerUrl}`;
-
-        // Step 3: Fetch player page to extract CONFIG and single-use apiToken
-        const pResp = await axios.get(playerUrl, {
-            headers: {
-                'User-Agent': UA,
-                'Referer': gatewayUrl
-            },
-            timeout: 6000,
-            responseType: 'text'
-        });
-
-        const confMatch = pResp.data.match(/window\.CONFIG\s*=\s*(\{.*?\});/);
-        if (!confMatch) {
-            console.log('[VidSrc] window.CONFIG not found in player page');
-            return [];
-        }
-
-        const conf = JSON.parse(confMatch[1]);
-        if (!conf.api || !conf.apiToken) {
-            console.log('[VidSrc] Missing api or apiToken in CONFIG');
-            return [];
-        }
-
-        // Step 4: Call stream_urls API with the single-use api_token
-        const streamApiUrl = conf.api + (conf.api.includes('?') ? '&' : '?') + 'api_token=' + encodeURIComponent(conf.apiToken);
-        const sResp = await axios.get(streamApiUrl, {
-            headers: {
-                'User-Agent': UA,
-                'Referer': playerUrl,
-                'Origin': host
-            },
-            timeout: 8000
-        });
-
-        const sData = sResp.data;
-        if (!sData || (sData.status_code && sData.status_code !== '200' && sData.status_code !== 200)) {
-            console.log('[VidSrc] Stream API returned non-200:', sData?.error || sData);
-            return [];
-        }
-
-        let rawUrls = [];
-        if (sData.vs && typeof sData.data?.stream_urls === 'string') {
-            rawUrls = await decryptStreamUrls(sData.vs, sData.data.stream_urls);
-        } else if (Array.isArray(sData.data?.stream_urls)) {
-            rawUrls = sData.data.stream_urls;
-        }
-
-        if (rawUrls.length === 0) {
-            console.log('[VidSrc] No stream URLs unpacked');
-            return [];
-        }
-
-        // Step 5: For each raw stream URL, fetch its host token and construct the final direct .m3u8
-        const streams = [];
-        for (let i = 0; i < rawUrls.length; i++) {
-            const rawUrl = rawUrls[i];
-            if (!rawUrl.includes('.m3u8')) continue;
-
-            const streamOrigin = new URL(rawUrl).origin;
-            const token = await fetchHostToken(streamOrigin, host + '/');
-            const finalM3u8Url = applyToken(rawUrl, token);
-
-            // Probe stream to ensure validity
-            try {
-                const probe = await axios.get(finalM3u8Url, {
-                    headers: {
-                        'User-Agent': UA,
-                        'Referer': host + '/'
-                    },
-                    timeout: 3000,
-                    responseType: 'text',
-                    validateStatus: (st) => st === 200 || st === 206
-                });
-
-                if (probe.status !== 200 && probe.status !== 206) continue;
-                if (!String(probe.data).includes('#EXTM3U')) continue;
-            } catch {
-                continue;
-            }
-
-            streams.push({
-                provider: 'VidSrc',
-                name: i === 0 ? 'VidSrc (Primary)' : `VidSrc (Server ${i + 1})`,
-                title: 'VidSrc 1080p',
-                url: finalM3u8Url,
-                quality: '1080p',
-                type: 'hls',
+            // Step 2: Retrieve internal player configuration from gateway URL
+            const gwResp = await axios.get(gatewayUrl, {
                 headers: {
-                    'Referer': host + '/',
-                    'Origin': host,
-                    'User-Agent': UA
-                }
+                    'User-Agent': UA,
+                    'Referer': 'https://vsembed.ru/'
+                },
+                timeout: 5000,
+                responseType: 'text'
             });
-        }
 
-        console.log(`[VidSrc] Successfully unpacked ${streams.length} direct HLS stream(s)`);
-        return streams;
+            const cfgMatch = gwResp.data.match(/window\.CFG\s*=\s*(\{.*?\});/);
+            if (cfgMatch) {
+                const cfg = JSON.parse(cfgMatch[1]);
+                if (cfg.playerUrl) {
+                    const playerUrl = `${host}${cfg.playerUrl}`;
+
+                    // Step 3: Fetch player page to extract CONFIG and single-use apiToken
+                    const pResp = await axios.get(playerUrl, {
+                        headers: {
+                            'User-Agent': UA,
+                            'Referer': gatewayUrl
+                        },
+                        timeout: 5000,
+                        responseType: 'text'
+                    });
+
+                    const confMatch = pResp.data.match(/window\.CONFIG\s*=\s*(\{.*?\});/);
+                    if (confMatch) {
+                        const conf = JSON.parse(confMatch[1]);
+                        if (conf.api && conf.apiToken) {
+                            // Step 4: Call stream_urls API with the single-use api_token
+                            const streamApiUrl = conf.api + (conf.api.includes('?') ? '&' : '?') + 'api_token=' + encodeURIComponent(conf.apiToken);
+                            const sResp = await axios.get(streamApiUrl, {
+                                headers: {
+                                    'User-Agent': UA,
+                                    'Referer': playerUrl,
+                                    'Origin': host
+                                },
+                                timeout: 6000
+                            });
+
+                            const sData = sResp.data;
+                            let rawUrls = [];
+                            if (sData?.vs && typeof sData?.data?.stream_urls === 'string') {
+                                rawUrls = await decryptStreamUrls(sData.vs, sData.data.stream_urls);
+                            } else if (Array.isArray(sData?.data?.stream_urls)) {
+                                rawUrls = sData.data.stream_urls;
+                            }
+
+                            if (rawUrls.length > 0) {
+                                const streams = [];
+                                for (let i = 0; i < rawUrls.length; i++) {
+                                    const rawUrl = rawUrls[i];
+                                    if (!rawUrl.includes('.m3u8')) continue;
+
+                                    const streamOrigin = new URL(rawUrl).origin;
+                                    const token = await fetchHostToken(streamOrigin, host + '/');
+                                    const finalM3u8Url = applyToken(rawUrl, token);
+
+                                    streams.push({
+                                        provider: 'VidSrc',
+                                        name: i === 0 ? 'VidSrc (Primary)' : `VidSrc (Server ${i + 1})`,
+                                        title: 'VidSrc 1080p',
+                                        url: finalM3u8Url,
+                                        quality: '1080p',
+                                        type: 'hls',
+                                        isM3U8: true,
+                                        headers: {
+                                            'Referer': host + '/',
+                                            'Origin': host,
+                                            'User-Agent': UA
+                                        }
+                                    });
+                                }
+
+                                if (streams.length > 0) {
+                                    console.log(`[VidSrc] Successfully unpacked ${streams.length} direct HLS stream(s)`);
+                                    return streams;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     } catch (err) {
-        console.error(`[VidSrc Scraper Error tmdb:${tmdbId}]:`, err.message);
-        return [];
+        console.warn(`[VidSrc] Direct decryption notice: ${err.message}`);
     }
+
+    // Embed fallback if direct HLS extraction blocked
+    const embedUrl = getVidSrcEmbedUrl(tmdbId, mediaType, seasonNum, episodeNum);
+    return [{
+        provider: 'VidSrc',
+        name: 'VidSrc (Embed)',
+        title: 'VidSrc Player',
+        url: embedUrl,
+        quality: '1080p',
+        isEmbed: true,
+        type: 'iframe',
+        headers: {
+            'Referer': 'https://vidsrc.to/',
+            'Origin': 'https://vidsrc.to',
+            'User-Agent': UA
+        }
+    }];
 }
 
 module.exports = {
+    VIDSRC_DOMAINS,
+    getVidSrcEmbedUrl,
     extractVidSrc: scrapeVidSrc,
     scrapeVidSrc,
     getVidsrcStreams

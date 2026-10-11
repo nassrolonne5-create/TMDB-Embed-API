@@ -52,6 +52,54 @@ function filterNonPlayableEmbeds(streams) {
   return streams.filter(s => s && typeof s === 'object' && s.url);
 }
 
+// Filter out non-English streams and prioritize original English sources
+const PURE_NON_ENGLISH_PATTERNS = [
+  /\[hindi\]/i,
+  /\[tamil\]/i,
+  /\[telugu\]/i,
+  /\[malayalam\]/i,
+  /\[kannada\]/i,
+  /\[bengali\]/i,
+  /\bhindi\s+dubbed\b/i,
+  /\btamil\s+dubbed\b/i,
+  /\btelugu\s+dubbed\b/i
+];
+
+const DUAL_AUDIO_PATTERNS = [
+  /\[hindi[^\]]*\+[^\]]*english/i,
+  /\[english[^\]]*\+[^\]]*hindi/i,
+  /dual[\s\-_]*audio/i,
+  /multi[\s\-_]*audio/i
+];
+
+function filterAndSortByLanguage(streams) {
+  if (!Array.isArray(streams) || streams.length === 0) return streams;
+
+  const pureEnglish = [];
+  const dualAudio = [];
+  const nonEnglish = [];
+
+  for (const s of streams) {
+    if (!s || !s.url) continue;
+    const text = `${s.name || ''} ${s.title || ''} ${s.url || ''}`;
+
+    if (PURE_NON_ENGLISH_PATTERNS.some(p => p.test(text))) {
+      nonEnglish.push(s);
+    } else if (DUAL_AUDIO_PATTERNS.some(p => p.test(text))) {
+      dualAudio.push(s);
+    } else {
+      pureEnglish.push(s);
+    }
+  }
+
+  // If pure English streams exist, drop non-English dubs and put English first
+  if (pureEnglish.length > 0 || dualAudio.length > 0) {
+    return [...pureEnglish, ...dualAudio];
+  }
+
+  return streams;
+}
+
 function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsConfig) {
   let minQuality = null;
   if (minQualitiesConfig) {
@@ -61,6 +109,7 @@ function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsCo
   let filtered = filterNonPlayableEmbeds(streams);
   filtered = filterByMinQuality(filtered, minQuality);
   filtered = filterByCodecs(filtered, excludeCodecsConfig);
+  filtered = filterAndSortByLanguage(filtered);
   return filtered;
 }
 module.exports = { applyFilters };

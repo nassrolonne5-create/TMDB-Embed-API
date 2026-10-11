@@ -58,16 +58,37 @@ async function getVidlinkStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                 headers: { 'Referer': 'https://vidlink.pro' }
             }));
 
-        if (streams.length === 0) {
-            console.log('[Vidlink] No usable stream URLs in response.');
-            return [];
-        }
+        const isTv = mediaType === 'tv' || mediaType === 'series';
+        const playerEmbedUrl = isTv
+            ? `https://vidlink.pro/tv/${tmdbId}/${seasonNum || 1}/${episodeNum || 1}`
+            : `https://vidlink.pro/movie/${tmdbId}`;
+
+        streams.push({
+            name: 'Vidlink (Player)',
+            title: 'Vidlink Player 1080p',
+            url: playerEmbedUrl,
+            quality: '1080p',
+            provider: 'Vidlink',
+            type: 'iframe',
+            isEmbed: true,
+            headers: { 'Referer': 'https://vidlink.pro/' }
+        });
 
         console.log(`[Vidlink] Got ${streams.length} stream(s).`);
         return streams;
     } catch (err) {
         console.error(`[Vidlink] Error: ${err.message}`);
-        return [];
+        const isTv = mediaType === 'tv' || mediaType === 'series';
+        return [{
+            name: 'Vidlink (Player)',
+            title: 'Vidlink Player 1080p',
+            url: isTv ? `https://vidlink.pro/tv/${tmdbId}/${seasonNum || 1}/${episodeNum || 1}` : `https://vidlink.pro/movie/${tmdbId}`,
+            quality: '1080p',
+            provider: 'Vidlink',
+            type: 'iframe',
+            isEmbed: true,
+            headers: { 'Referer': 'https://vidlink.pro/' }
+        }];
     }
 }
 

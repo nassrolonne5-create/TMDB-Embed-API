@@ -385,13 +385,21 @@ async function extractVidRift(tmdbId, season = null, episode = null) {
  * Call this in your scraper router (e.g., /api/streams/movie/:id or /series/:id)
  */
 async function getDirectStreams(tmdbId, season = null, episode = null) {
-  const [vidrockResults, vidSrcResults, vidRiftResults] = await Promise.allSettled([
+  const mediaType = (season && episode) ? 'tv' : 'movie';
+  const { getSmashystreamStreams } = require('../providers/smashystream');
+  const { getTwoembedStreams } = require('../providers/twoembed');
+
+  const [vidrockResults, vidSrcResults, vidRiftResults, smashyResults, twoEmbedResults] = await Promise.allSettled([
     extractVidrock(tmdbId, season, episode),
     extractVidSrc(tmdbId, season, episode),
     extractVidRift(tmdbId, season, episode),
+    getSmashystreamStreams(tmdbId, mediaType, season, episode),
+    getTwoembedStreams(tmdbId, mediaType, season, episode),
   ]);
 
   const allStreams = [];
+  if (smashyResults.status === 'fulfilled') allStreams.push(...smashyResults.value);
+  if (twoEmbedResults.status === 'fulfilled') allStreams.push(...twoEmbedResults.value);
   if (vidrockResults.status === 'fulfilled') allStreams.push(...vidrockResults.value);
   if (vidSrcResults.status === 'fulfilled') allStreams.push(...vidSrcResults.value);
   if (vidRiftResults.status === 'fulfilled') allStreams.push(...vidRiftResults.value);

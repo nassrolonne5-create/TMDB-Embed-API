@@ -23,7 +23,9 @@ const providerFunctionMap = {
   'vidrock.js': 'getVidrockStreams',
   'vidrift.js': 'getVidriftStreams',
   'vidfast.js': 'getVidfastStreams',
-  'vidsrc.js': 'getVidsrcStreams'
+  'vidsrc.js': 'getVidsrcStreams',
+  'smashystream.js': 'getSmashystreamStreams',
+  'twoembed.js': 'getTwoembedStreams'
 };
 
 // Stats for debug endpoint

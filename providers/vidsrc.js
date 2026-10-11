@@ -94,7 +94,7 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
         const remoteResp = await axios.get(remotePath, { timeout: 4500 });
         if (remoteResp.data && Array.isArray(remoteResp.data.streams) && remoteResp.data.streams.length > 0) {
             console.log(`[VidSrc] Resolved ${remoteResp.data.streams.length} stream(s) via remote scraper`);
-            return remoteResp.data.streams.map(stream => ({
+            const directStreams = remoteResp.data.streams.map(stream => ({
                 provider: 'VidSrc',
                 name: stream.name || 'VidSrc (Primary)',
                 title: stream.title || 'VidSrc 1080p',
@@ -108,6 +108,28 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
                     'User-Agent': UA
                 }
             }));
+
+            // Also attach active mirror embed so browsers without proxy can play instantly
+            const altMirror = isTv
+                ? `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${s}&episode=${ep}`
+                : `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`;
+
+            directStreams.push({
+                provider: 'VidSrc',
+                name: 'VidSrc (Mirror)',
+                title: 'VidSrc Player 1080p',
+                url: altMirror,
+                quality: '1080p',
+                isEmbed: true,
+                type: 'iframe',
+                headers: {
+                    'Referer': 'https://vidsrc.me/',
+                    'Origin': 'https://vidsrc.me',
+                    'User-Agent': UA
+                }
+            });
+
+            return directStreams;
         }
     } catch (err) {
         // Continue to local decryption pipeline
@@ -224,20 +246,40 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
 
     // Embed fallback if direct HLS extraction blocked
     const embedUrl = getVidSrcEmbedUrl(tmdbId, mediaType, seasonNum, episodeNum);
-    return [{
-        provider: 'VidSrc',
-        name: 'VidSrc (Embed)',
-        title: 'VidSrc Player',
-        url: embedUrl,
-        quality: '1080p',
-        isEmbed: true,
-        type: 'iframe',
-        headers: {
-            'Referer': 'https://vidsrc.to/',
-            'Origin': 'https://vidsrc.to',
-            'User-Agent': UA
+    const altMirror = isTv
+        ? `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${s}&episode=${ep}`
+        : `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`;
+
+    return [
+        {
+            provider: 'VidSrc',
+            name: 'VidSrc (to)',
+            title: 'VidSrc Player (vidsrc.to)',
+            url: embedUrl,
+            quality: '1080p',
+            isEmbed: true,
+            type: 'iframe',
+            headers: {
+                'Referer': 'https://vidsrc.to/',
+                'Origin': 'https://vidsrc.to',
+                'User-Agent': UA
+            }
+        },
+        {
+            provider: 'VidSrc',
+            name: 'VidSrc (me)',
+            title: 'VidSrc Player (vidsrc.me)',
+            url: altMirror,
+            quality: '1080p',
+            isEmbed: true,
+            type: 'iframe',
+            headers: {
+                'Referer': 'https://vidsrc.me/',
+                'Origin': 'https://vidsrc.me',
+                'User-Agent': UA
+            }
         }
-    }];
+    ];
 }
 
 module.exports = {

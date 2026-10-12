@@ -55,6 +55,8 @@ async function getVidlinkStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                 url: entry.url,
                 quality: qualityKey,
                 provider: 'Vidlink',
+                language: 'English',
+                isDubbed: false,
                 headers: { 'Referer': 'https://vidlink.pro' }
             }));
 

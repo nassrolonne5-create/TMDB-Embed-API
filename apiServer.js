@@ -377,7 +377,12 @@ app.get('/api/streams/:type/:tmdbId', async (req,res) => {
       }
     }
 
-    let streams = applyFilters(combined, 'aggregate', config.minQualities, config.excludeCodecs);
+    const languageOptions = {
+      preferEnglish: req.query.preferEnglish !== 'false' && (config.preferEnglishAudio !== false),
+      excludeDubbed: req.query.excludeDubbed === 'true' || req.query.lang === 'en' || Boolean(config.excludeDubbedStreams)
+    };
+
+    let streams = applyFilters(combined, 'aggregate', config.minQualities, config.excludeCodecs, languageOptions);
     metrics.streamsReturned += streams.length;
     if (config.enableProxy) {
       const serverUrl = `${req.protocol}://${req.get('host')}`;
@@ -409,7 +414,11 @@ app.get('/api/streams/:provider/:type/:tmdbId', async (req,res) => {
     const t0 = Date.now();
     let streams = await prov.fetch({ tmdbId, type: tmdbType, season, episode, imdbId, filters:{} });
     const providerTimings = { [prov.name]: Date.now()-t0 };
-    streams = applyFilters(streams, prov.name, config.minQualities, config.excludeCodecs);
+    const languageOptions = {
+      preferEnglish: req.query.preferEnglish !== 'false' && (config.preferEnglishAudio !== false),
+      excludeDubbed: req.query.excludeDubbed === 'true' || req.query.lang === 'en' || Boolean(config.excludeDubbedStreams)
+    };
+    streams = applyFilters(streams, prov.name, config.minQualities, config.excludeCodecs, languageOptions);
     metrics.streamsReturned += streams.length;
     if (config.enableProxy) {
       const serverUrl = `${req.protocol}://${req.get('host')}`;

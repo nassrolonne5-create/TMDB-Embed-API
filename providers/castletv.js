@@ -245,6 +245,8 @@ function buildCastleStreams(raw, langLabel, titleLine, resolution) {
             const existing = bestByUrl.get(videoUrl);
             if (existing && existing.resNum >= resNum) continue;
             const nameTag = langLabel ? `CastleTV ${langLabel}` : 'CastleTV';
+            const isEng = !langLabel || /english|en/i.test(langLabel);
+            const language = isEng ? 'English' : langLabel.replace(/[[\]]/g, '');
             bestByUrl.set(videoUrl, {
                 resNum,
                 stream: {
@@ -253,6 +255,8 @@ function buildCastleStreams(raw, langLabel, titleLine, resolution) {
                     url: videoUrl,
                     quality: qual,
                     provider: 'CastleTV',
+                    language,
+                    isDubbed: !isEng,
                     headers: PLAYBACK_HEADERS,
                     ...(subtitles.length ? { subtitles } : {})
                 }
@@ -266,12 +270,16 @@ function buildCastleStreams(raw, langLabel, titleLine, resolution) {
         if (!videoUrl) return [];
         const qual = streamQuality(videoUrl, data.resolutionDescription, 0, defaultQual);
         const nameTag = langLabel ? `CastleTV ${langLabel}` : 'CastleTV';
+        const isEng = !langLabel || /english|en/i.test(langLabel);
+        const language = isEng ? 'English' : langLabel.replace(/[[\]]/g, '');
         streams.push({
             name: `${nameTag} | ${qual}`,
             title: `${titleLine}\n${qual} | ${formatSize(data.size)} | Castle`,
             url: videoUrl,
             quality: qual,
             provider: 'CastleTV',
+            language,
+            isDubbed: !isEng,
             headers: PLAYBACK_HEADERS,
             ...(subtitles.length ? { subtitles } : {})
         });
@@ -356,7 +364,10 @@ async function getCastletvStreams(tmdbId, mediaType = 'movie', seasonNum = null,
 
         const epEntry = episodes.find((e) => e.id && e.id.toString() === episodeId);
         const allTracks = (epEntry && epEntry.tracks) || [];
-        const tracks = pickPreferredTracks(allTracks);
+        const preferred = pickPreferredTracks(allTracks);
+        // Prioritize English audio track when available, eliminating unwanted dub requests
+        const englishTracks = preferred.filter((t) => /english|^en$/i.test(t.languageName || t.abbreviate || ''));
+        const tracks = englishTracks.length > 0 ? englishTracks : preferred;
 
         const streams = [];
         const seenUrls = new Set();

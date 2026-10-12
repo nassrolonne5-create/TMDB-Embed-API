@@ -81,6 +81,8 @@ async function getStreamflixStreams(tmdbId, mediaType = 'movie', seasonNum = nul
             url: `${base}${match.movielink}`,
             quality: 'Auto',
             provider: 'StreamFlix',
+            language: 'English',
+            isDubbed: false,
             headers: { 'User-Agent': REQUEST_HEADERS['User-Agent'] }
         }));
     } catch (err) {

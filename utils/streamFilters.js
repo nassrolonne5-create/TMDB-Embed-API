@@ -52,7 +52,7 @@ function filterNonPlayableEmbeds(streams) {
   return streams.filter(s => s && typeof s === 'object' && s.url);
 }
 
-// Filter out non-English streams and prioritize original English sources
+// Comprehensive patterns for non-English (dubbed / foreign audio) streams
 const PURE_NON_ENGLISH_PATTERNS = [
   /\[hindi\]/i,
   /\[tamil\]/i,
@@ -60,20 +60,74 @@ const PURE_NON_ENGLISH_PATTERNS = [
   /\[malayalam\]/i,
   /\[kannada\]/i,
   /\[bengali\]/i,
-  /\bhindi\s+dubbed\b/i,
-  /\btamil\s+dubbed\b/i,
-  /\btelugu\s+dubbed\b/i
+  /\[marathi\]/i,
+  /\[punjabi\]/i,
+  /\[urdu\]/i,
+  /\[nepali\]/i,
+  /\[french\]/i,
+  /\[german\]/i,
+  /\[spanish\]/i,
+  /\[italian\]/i,
+  /\[russian\]/i,
+  /\b(hindi|tamil|telugu|malayalam|kannada|bengali|marathi|punjabi|urdu|nepali)\s+(dub|dubbed|org|audio)\b/i,
+  /\b(telugu|hindi|tamil|malayalam|kannada)\s+org\b/i,
+  /\borg\s+(nf\s+)?(hindi|tamil|telugu)\b/i,
+  /\b(vff|vfq|vostfr)\b/i,
+  /\b(french|german|deutsch|spanish|espanol|castellano|latino|italian|italiano|russian)\s+(dub|dubbed|audio)\b/i,
+  /\b(hindi|tamil|telugu|nepali)\s+dubbed\b/i,
+  /\|\s*hotstar\b/i
 ];
 
 const DUAL_AUDIO_PATTERNS = [
-  /\[hindi[^\]]*\+[^\]]*english/i,
-  /\[english[^\]]*\+[^\]]*hindi/i,
-  /dual[\s\-_]*audio/i,
-  /multi[\s\-_]*audio/i
+  /\[\s*hindi[^\]]*\+[^\]]*english/i,
+  /\[\s*english[^\]]*\+[^\]]*hindi/i,
+  /\[\s*tamil[^\]]*\+[^\]]*english/i,
+  /\[\s*telugu[^\]]*\+[^\]]*english/i,
+  /\bhindi[^+\n]*\+[^+\n]*english\b/i,
+  /\benglish[^+\n]*\+[^+\n]*hindi\b/i,
+  /\btamil[^+\n]*\+[^+\n]*english\b/i,
+  /\btelugu[^+\n]*\+[^+\n]*english\b/i,
+  /\bdual[\s\-_]*audio\b/i,
+  /\bmulti[\s\-_]*audio\b/i,
+  /\bmulti\s+audio\b/i,
+  /\|\s*multi\s*audio\s*\|/i
 ];
 
-function filterAndSortByLanguage(streams) {
+function classifyStreamLanguage(s) {
+  if (!s) return 'unknown';
+
+  if (s.isDubbed === true) {
+    if (s.language && /dual|multi/i.test(s.language)) return 'dual';
+    return 'non_english';
+  }
+
+  // Strip subtitle tokens to avoid false positives (e.g. "English ESubs" on Telugu audio)
+  const textWithoutSubs = `${s.name || ''} ${s.title || ''} ${s.url || ''}`
+    .replace(/\b(eng(?:lish)?[\s._-]*(?:esub|esubs|sub|subs|subtitle|subtitles))\b/gi, '')
+    .replace(/\b(esub|esubs|multisub|nosub)\b/gi, '');
+
+  if (PURE_NON_ENGLISH_PATTERNS.some(p => p.test(textWithoutSubs))) {
+    return 'non_english';
+  }
+
+  if (DUAL_AUDIO_PATTERNS.some(p => p.test(textWithoutSubs))) {
+    return 'dual';
+  }
+
+  if (s.language === 'English' && !s.isDubbed) {
+    return 'english';
+  }
+
+  return 'english';
+}
+
+function filterAndSortByLanguage(streams, options = {}) {
   if (!Array.isArray(streams) || streams.length === 0) return streams;
+
+  const preferEnglish = options.preferEnglish !== false;
+  const excludeDubbed = Boolean(options.excludeDubbed);
+
+  if (!preferEnglish && !excludeDubbed) return streams;
 
   const pureEnglish = [];
   const dualAudio = [];
@@ -81,26 +135,42 @@ function filterAndSortByLanguage(streams) {
 
   for (const s of streams) {
     if (!s || !s.url) continue;
-    const text = `${s.name || ''} ${s.title || ''} ${s.url || ''}`;
-
-    if (PURE_NON_ENGLISH_PATTERNS.some(p => p.test(text))) {
+    const cat = classifyStreamLanguage(s);
+    if (cat === 'non_english') {
       nonEnglish.push(s);
-    } else if (DUAL_AUDIO_PATTERNS.some(p => p.test(text))) {
+    } else if (cat === 'dual') {
       dualAudio.push(s);
     } else {
       pureEnglish.push(s);
     }
   }
 
-  // If pure English streams exist, drop non-English dubs and put English first
-  if (pureEnglish.length > 0 || dualAudio.length > 0) {
+  // When excludeDubbed is requested, only return pure English sources if available
+  if (excludeDubbed) {
+    if (pureEnglish.length > 0) return pureEnglish;
+    if (dualAudio.length > 0) return dualAudio;
+    return streams;
+  }
+
+  // When pure English streams exist:
+  // Drop pure non-English dubs completely.
+  // Prioritize pure English first. Only append a small set of dual-audio streams at the end if English is scarce.
+  if (pureEnglish.length > 0) {
+    if (pureEnglish.length >= 6) {
+      // Abundant pure English: cap dual audio to 2 streams at bottom
+      return [...pureEnglish, ...dualAudio.slice(0, 2)];
+    }
     return [...pureEnglish, ...dualAudio];
+  }
+
+  if (dualAudio.length > 0) {
+    return [...dualAudio, ...nonEnglish];
   }
 
   return streams;
 }
 
-function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsConfig) {
+function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsConfig, languageOptions = {}) {
   let minQuality = null;
   if (minQualitiesConfig) {
     if (typeof minQualitiesConfig === 'string') minQuality = minQualitiesConfig;
@@ -109,7 +179,7 @@ function applyFilters(streams, providerName, minQualitiesConfig, excludeCodecsCo
   let filtered = filterNonPlayableEmbeds(streams);
   filtered = filterByMinQuality(filtered, minQuality);
   filtered = filterByCodecs(filtered, excludeCodecsConfig);
-  filtered = filterAndSortByLanguage(filtered);
+  filtered = filterAndSortByLanguage(filtered, languageOptions);
   return filtered;
 }
 module.exports = { applyFilters };

@@ -1869,15 +1869,37 @@ async function get4KHDHubStreams(tmdbId, type, season = null, episode = null) {
             console.log(`[4KHDHub] URL validation disabled, skipping validation`);
         }
 
-        // Normalize to generic stream object format
-        let streams = validatedLinks.map(link => ({
-            name: link.name, // Don't add prefix since it's already included
-            title: link.title || link.name,
-            url: link.url,
-            quality: `${link.quality}p`,
-            provider: "4khdhub",
-            headers: {}
-        }));
+        // Normalize to generic stream object format with audio classification
+        let streams = validatedLinks.map(link => {
+            const rawTitle = link.title || link.name || '';
+            const textWithoutSubs = rawTitle
+                .replace(/\b(eng(?:lish)?[\s._-]*(?:esub|esubs|sub|subs))\b/gi, '')
+                .replace(/\b(esub|esubs)\b/gi, '');
+            const hasHindi = /hindi/i.test(textWithoutSubs);
+            const hasEnglish = /english/i.test(textWithoutSubs);
+            const isDual = hasHindi && hasEnglish;
+            let language = 'English';
+            if (isDual) language = 'Dual Audio (Hindi + English)';
+            else if (hasHindi) language = 'Hindi Dubbed';
+
+            return {
+                name: link.name,
+                title: link.title || link.name,
+                url: link.url,
+                quality: `${link.quality}p`,
+                provider: "4khdhub",
+                language,
+                isDubbed: Boolean(hasHindi),
+                headers: {}
+            };
+        });
+
+        // Prioritize pure English streams if any were extracted
+        streams.sort((a, b) => {
+            const aPure = !a.isDubbed && a.language === 'English' ? 1 : 0;
+            const bPure = !b.isDubbed && b.language === 'English' ? 1 : 0;
+            return bPure - aPure;
+        });
 
         // Always remove r2.dev links
         {

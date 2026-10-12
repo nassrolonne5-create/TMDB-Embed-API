@@ -138,6 +138,8 @@ async function getVidrockStreams(tmdbId, mediaType = 'movie', seasonNum = null, 
                     quality: '1080p',
                     type: 'hls',
                     isM3U8: true,
+                    language: 'English',
+                    isDubbed: false,
                     headers: {
                         'Referer': 'https://vidrock.to/',
                         'User-Agent': USER_AGENT

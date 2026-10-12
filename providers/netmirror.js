@@ -14,8 +14,8 @@ const UA_POOL = [
 const ACCEPT_LANG_POOL = [
     'en-US,en;q=0.9',
     'en-GB,en;q=0.9',
-    'en-IN,en;q=0.9,hi;q=0.7',
-    'en-US,en;q=0.8,es;q=0.5'
+    'en-CA,en;q=0.9',
+    'en-US,en;q=0.8'
 ];
 let uaIndex = 0;
 let langIndex = 0;
@@ -230,12 +230,15 @@ async function fetchPlatform(platform, title, type, season, episode) {
             console.log(`[NetMirror] ${platform} player status: ${player.status} — accepting if link present`);
         }
         if (!player.video_link) return [];
+        const isHotstar = platform === 'hotstar' || platform === 'disney';
         return [{
             name: `NetMirror | ${platform === 'primevideo' ? 'Prime Video' : platform.charAt(0).toUpperCase() + platform.slice(1)}`,
             title: `${title}\nAuto`,
             url: player.video_link,
             quality: 'Auto',
             provider: 'NetMirror',
+            language: isHotstar ? 'Hindi Dubbed' : 'English',
+            isDubbed: isHotstar,
             headers: {
                 Referer: player.referer || api,
                 'User-Agent': nextUA()
@@ -286,7 +289,13 @@ async function getNetmirrorStreams(tmdbId, mediaType = 'movie', seasonNum = null
                     .filter((platform) => platform !== 'netflix' || direct.length === 0)
                     .map((platform) => fetchPlatform(platform, title, type, season, episode))
             );
-            const streams = hdOnly([...direct, ...fallback.flat()], true);
+            let combined = [...direct, ...fallback.flat()];
+            // If we have pure English streams from Netflix or Prime Video, drop Hotstar Hindi dubs
+            const englishStreams = combined.filter(s => s && s.language === 'English' && !s.isDubbed);
+            if (englishStreams.length > 0) {
+                combined = combined.filter(s => !s.isDubbed && s.language !== 'Hindi Dubbed');
+            }
+            const streams = hdOnly(combined, true);
             streamCache.set(key, { streams, expiresAt: Date.now() + STREAM_CACHE_TTL });
             console.log(`[NetMirror] ${tmdbId} streams ready: ${streams.length}`);
             return streams;

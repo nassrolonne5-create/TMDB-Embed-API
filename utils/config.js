@@ -107,7 +107,7 @@ function normalizeConfig(base) {
   // Dynamic provider enable flags
   const providerNames = getProviderNames();
   const boolKeys = providerNames.map(name => `enable${name.charAt(0).toUpperCase() + name.slice(1)}Provider`);
-  boolKeys.push('disableCache', 'enablePStreamApi', 'disableUrlValidation', 'disable4khdhubUrlValidation', 'enableProxy');
+  boolKeys.push('disableCache', 'enablePStreamApi', 'disableUrlValidation', 'disable4khdhubUrlValidation', 'enableProxy', 'preferEnglishAudio', 'excludeDubbedStreams');
   
   boolKeys.forEach(k=>{ if (cfg[k] === 'true') cfg[k] = true; else if (cfg[k] === 'false') cfg[k] = false; });
   
@@ -130,6 +130,8 @@ function normalizeConfig(base) {
   // Proxy features removed; always use direct connections
   if (cfg.disableUrlValidation === undefined) cfg.disableUrlValidation = false;
   if (cfg.disable4khdhubUrlValidation === undefined) cfg.disable4khdhubUrlValidation = false;
+  if (cfg.preferEnglishAudio === undefined) cfg.preferEnglishAudio = true;
+  if (cfg.excludeDubbedStreams === undefined) cfg.excludeDubbedStreams = false;
   // TMDB ID used by the dashboard's "Run Provider Functional Checks" feature
   if (!cfg.providerCheckTmdbId) cfg.providerCheckTmdbId = '278';
   return cfg;

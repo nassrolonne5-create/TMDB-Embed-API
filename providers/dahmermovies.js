@@ -53,6 +53,38 @@ async function fetchDirectory(title, year, season) {
     return null;
 }
 
+function classifyFileAudio(fileName, title) {
+    // 1. Strip subtitle tokens to prevent "English ESubs" on Telugu/Hindi files from triggering English audio
+    const textWithoutSubs = fileName
+        .replace(/\b(eng(?:lish)?[\s._-]*(?:esub|esubs|sub|subs|subtitle|subtitles))\b/gi, '')
+        .replace(/\b(esub|esubs|multisub|nosub)\b/gi, '');
+
+    // 2. Check for explicit foreign audio / dub markers
+    const foreignAudioRegex = /\b(telugu|tamil|hindi|kannada|malayalam|bengali|marathi|bhojpuri|punjabi|urdu|vff|vfq|vostfr|french|deutsch|german|espanol|castellano|latino|italiano|russian|hin|tam|tel|mal|kan|ben)\b/i;
+    const isForeignAudio = foreignAudioRegex.test(textWithoutSubs);
+
+    // 3. Check for dual/multi audio markers
+    const isMultiAudio = /\b(multi[\s._-]*audio|dual[\s._-]*audio|multi|dual|dubbed|dub)\b/i.test(textWithoutSubs);
+
+    // 4. Check for genuine English audio markers
+    const hasEngAudio = /\b(eng|english)\b/i.test(textWithoutSubs);
+    const isStandardEnglishTitle = /^[a-zA-Z0-9\s?!\-:'",.]+$/.test(title);
+
+    if (isForeignAudio && hasEngAudio) {
+        return { language: 'Dual Audio', isDubbed: true, isPureEnglish: false };
+    }
+    if (isForeignAudio && !hasEngAudio) {
+        return { language: 'Dubbed', isDubbed: true, isPureEnglish: false };
+    }
+    if (isMultiAudio) {
+        return { language: 'Multi Audio', isDubbed: true, isPureEnglish: false };
+    }
+    if (hasEngAudio || isStandardEnglishTitle) {
+        return { language: 'English', isDubbed: false, isPureEnglish: true };
+    }
+    return { language: 'Original', isDubbed: false, isPureEnglish: true };
+}
+
 async function getDahmermoviesStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
     console.log(`[DahmerMovies] Searching for ${mediaType} ${tmdbId}`);
 
@@ -97,11 +129,37 @@ async function getDahmermoviesStreams(tmdbId, mediaType = 'movie', seasonNum = n
         if (epFiltered.length > 0) paths = epFiltered;
     }
 
-    // Sort 4K first
-    paths.sort((a, b) => (/2160p|4k/i.test(b.text) ? 1 : 0) - (/2160p|4k/i.test(a.text) ? 1 : 0));
+    // Classify paths by audio language and resolution quality
+    const classified = paths.map(p => {
+        const audioInfo = classifyFileAudio(p.text, title);
+        const is4K = /2160p|4k/i.test(p.text);
+        const is1080 = /1080p/i.test(p.text);
+        const is720 = /720p/i.test(p.text);
+        const qualityRank = is4K ? 3 : (is1080 ? 2 : (is720 ? 1 : 0));
+        return { ...p, ...audioInfo, qualityRank };
+    });
+
+    // Partition: prioritize pure English / Original audio releases
+    const pureEnglishPaths = classified.filter(p => p.isPureEnglish);
+    const dualAudioPaths = classified.filter(p => p.language === 'Dual Audio');
+    const otherPaths = classified.filter(p => !p.isPureEnglish && p.language !== 'Dual Audio');
+
+    const sortFn = (a, b) => b.qualityRank - a.qualityRank;
+    pureEnglishPaths.sort(sortFn);
+    dualAudioPaths.sort(sortFn);
+    otherPaths.sort(sortFn);
+
+    let selectedPaths = [];
+    if (pureEnglishPaths.length >= 5) {
+        selectedPaths = pureEnglishPaths.slice(0, 5);
+    } else if (pureEnglishPaths.length > 0) {
+        selectedPaths = [...pureEnglishPaths, ...dualAudioPaths].slice(0, 5);
+    } else {
+        selectedPaths = [...dualAudioPaths, ...otherPaths].slice(0, 5);
+    }
 
     const streams = [];
-    for (const path of paths.slice(0, 5)) {
+    for (const path of selectedPaths) {
         let directUrl;
         if (path.href.startsWith('http')) {
             directUrl = path.href;
@@ -113,13 +171,6 @@ async function getDahmermoviesStreams(tmdbId, mediaType = 'movie', seasonNum = n
         directUrl = decodeURI(directUrl.replace(/([^:]\/)\/+/g, '$1'));
 
         const fileName = path.text;
-        const isMulti = /\b(HIN|TAM|TEL|Multi|Dual|DUB|Multi-Audio|MULTI)\b/i.test(fileName);
-        const hasEngTag = /\b(Eng|English)\b/i.test(fileName);
-        const isEnglishTitle = /^[a-zA-Z0-9\s?!\-:]+$/.test(title);
-        let language = 'Original';
-        if (isMulti) language = 'Multi Audio';
-        else if (isEnglishTitle && hasEngTag) language = 'English';
-
         const formatMatch = fileName.match(/\.(mkv|mp4|m3u8|avi|webm)$/i);
         const fileFormat = formatMatch ? formatMatch[1].toUpperCase() : 'LINK';
         const resolution = fileName.match(/\b(2160p|1080p|720p|4[Kk])\b/)?.[0] || '1080p';
@@ -132,10 +183,12 @@ async function getDahmermoviesStreams(tmdbId, mediaType = 'movie', seasonNum = n
 
         streams.push({
             name: 'DahmerMovies',
-            title: `${resolution} | ${language} | ${path.size} | ${fileFormat} | ${info}`,
+            title: `${resolution} | ${path.language} | ${path.size} | ${fileFormat} | ${info}`,
             url: DAHMER_WORKER_API + encodeURI(directUrl),
             quality: resolution,
             provider: 'DahmerMovies',
+            language: path.language,
+            isDubbed: path.isDubbed,
             headers: {
                 'User-Agent': REQUEST_HEADERS['User-Agent'],
                 'Referer': `${DAHMER_MOVIES_API}/`,

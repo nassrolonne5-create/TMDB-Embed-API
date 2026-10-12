@@ -54,6 +54,8 @@ async function extractVidrock(tmdbId, season = null, episode = null) {
         quality: '1080P',
         type: 'hls',
         isM3U8: true,
+        language: 'English',
+        isDubbed: false,
         headers: {
           Referer: 'https://vidrock.to/',
           'User-Agent': USER_AGENT,
@@ -342,6 +344,8 @@ async function extractVidRift(tmdbId, season = null, episode = null) {
               quality: item.label || '1080P',
               type: 'hls',
               isM3U8: true,
+              language: 'English',
+              isDubbed: false,
               headers: {
                 Referer: 'https://vidrift.net/',
                 'User-Agent': USER_AGENT,

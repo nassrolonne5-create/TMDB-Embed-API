@@ -102,6 +102,8 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
                 quality: stream.quality || '1080p',
                 type: stream.type || 'hls',
                 isM3U8: true,
+                language: 'English',
+                isDubbed: false,
                 headers: stream.headers || {
                     'Referer': 'https://vidsrc.to/',
                     'Origin': 'https://vidsrc.to',
@@ -222,6 +224,8 @@ async function getVidsrcStreams(tmdbId, mediaType = 'movie', seasonNum = null, e
                                         quality: '1080p',
                                         type: 'hls',
                                         isM3U8: true,
+                                        language: 'English',
+                                        isDubbed: false,
                                         headers: {
                                             'Referer': host + '/',
                                             'Origin': host,
